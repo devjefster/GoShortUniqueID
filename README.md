@@ -34,7 +34,7 @@ package main
 
 import (
 	"fmt"
-	"https://github.com/devjefster/GoShortUniqueID/idgen"
+	"github.com/devjefster/GoShortUniqueID/idgen"
 )
 
 func main() {

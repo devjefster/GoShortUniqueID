@@ -85,11 +85,49 @@ func TestEncodeBase58(t *testing.T) {
 	id := "240210120530XYZ9876"
 	encoded := EncodeBase58(id)
 
-	// Ensure it contains only Base58 characters
 	const base58Chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 	for _, ch := range encoded {
 		if !strings.ContainsRune(base58Chars, ch) {
 			t.Errorf("Base58 encoding contains invalid character: %c", ch)
 		}
+	}
+}
+
+func TestEncodeBase58_EmptyInput(t *testing.T) {
+	encoded := EncodeBase58("")
+	if encoded != "" {
+		t.Errorf("Base58 encoding of empty string should be empty, got %q", encoded)
+	}
+}
+
+func TestEncodeBase58_ShortInput(t *testing.T) {
+	encoded := EncodeBase58("A")
+	if encoded == "" {
+		t.Error("Base58 encoding of non-empty input should not be empty")
+	}
+}
+
+func TestEncodeBase58_Deterministic(t *testing.T) {
+	a := EncodeBase58("hello")
+	b := EncodeBase58("hello")
+	if a != b {
+		t.Errorf("Base58 encoding should be deterministic: %q != %q", a, b)
+	}
+}
+
+func TestNew_InvalidCharset(t *testing.T) {
+	g := New(6, "X", "")
+	id := g.Generate()
+	if id == "" {
+		t.Error("Generate should not return empty even with single-char charset")
+	}
+}
+
+func TestNew_DefaultValues(t *testing.T) {
+	g := New(0, "", "")
+	id := g.Generate()
+	expectedMinLen := 12 + 6 + 4
+	if len(id) < expectedMinLen {
+		t.Errorf("ID too short: got %d, expected at least %d", len(id), expectedMinLen)
 	}
 }

@@ -2,21 +2,32 @@ package idgen
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
+	"math/big"
 	"math/rand"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// Default values
 const (
 	defaultCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	defaultLength  = 6
-	defaultTimeFmt = "060102150405" // YYMMDDHHmmss (default)
+	defaultTimeFmt = "060102150405"
+	minCharsetLen  = 2
 )
 
-// ShortIDGenerator struct for configuration
+var (
+	globalRand   *rand.Rand
+	globalRandMu sync.Mutex
+	randOnce     sync.Once
+)
+
+func initRand() {
+	src := rand.NewSource(time.Now().UnixNano())
+	globalRand = rand.New(src)
+}
+
 type ShortIDGenerator struct {
 	length     int
 	charset    string
@@ -24,17 +35,18 @@ type ShortIDGenerator struct {
 	counter    uint64
 }
 
-// New creates a new ShortIDGenerator with custom options
 func New(length int, charset, timeFormat string) *ShortIDGenerator {
 	if length <= 0 {
 		length = defaultLength
 	}
-	if charset == "" {
+	if charset == "" || len(charset) < minCharsetLen {
 		charset = defaultCharset
 	}
 	if timeFormat == "" {
 		timeFormat = defaultTimeFmt
 	}
+
+	randOnce.Do(initRand)
 
 	return &ShortIDGenerator{
 		length:     length,
@@ -43,48 +55,45 @@ func New(length int, charset, timeFormat string) *ShortIDGenerator {
 	}
 }
 
-// Generate creates a unique, human-readable, timestamped ID
 func (g *ShortIDGenerator) Generate() string {
-	// Generate timestamp in the specified format
 	timestamp := time.Now().Format(g.timeFormat)
-
-	// Generate a random string
 	randomStr := generateRandomString(g.length, g.charset)
-
-	// Ensure uniqueness by adding an atomic counter
-	counter := atomic.AddUint64(&g.counter, 1) % 10000 // Max 4-digit counter
-
-	// Return combined ID
+	counter := atomic.AddUint64(&g.counter, 1) % 10000
 	return fmt.Sprintf("%s%s%04d", timestamp, randomStr, counter)
 }
 
-// generateRandomString creates a random string of given length
 func generateRandomString(length int, charset string) string {
-	src := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(src)
+	globalRandMu.Lock()
+	defer globalRandMu.Unlock()
 
 	result := make([]byte, length)
 	for i := range result {
-		result[i] = charset[r.Intn(len(charset))]
+		result[i] = charset[globalRand.Intn(len(charset))]
 	}
 	return string(result)
 }
 
-// EncodeBase64 encodes a unique ID using Base64 (for URL-safe versions)
 func EncodeBase64(input string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(input))
 }
 
-// EncodeBase58 encodes a unique ID using Base58 (shorter than Base64)
 func EncodeBase58(input string) string {
-	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-	var result string
-	num := binary.BigEndian.Uint64([]byte(input))
-
-	for num > 0 {
-		remainder := num % 58
-		num = num / 58
-		result = string(alphabet[remainder]) + result
+	if len(input) == 0 {
+		return ""
 	}
-	return result
+
+	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+	num := new(big.Int).SetBytes([]byte(input))
+	base := big.NewInt(58)
+	zero := big.NewInt(0)
+	mod := new(big.Int)
+
+	var result []byte
+	for num.Cmp(zero) > 0 {
+		num.DivMod(num, base, mod)
+		result = append([]byte{alphabet[mod.Int64()]}, result...)
+	}
+
+	return string(result)
 }
